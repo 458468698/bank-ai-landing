@@ -1,8 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
 
-// ============ Worker API 地址 ============
-// 部署 Cloudflare Worker 后替换为你的 Worker URL
-const API_BASE = 'https://bank-ai-proxy.wyymij.workers.dev'
+// ============ DeepSeek API 直调（MVP 临时方案） ============
+// 注意：API Key 暴露在前端代码中，仅用于 MVP 测试阶段
+// 正式产品必须使用后端代理保护 Key
+const DEEPSEEK_API_KEY = 'sk-9517c7bdde2c411892b0768ade314d80'
+const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions'
 
 // ============ 场景配置 ============
 const SCENARIOS = [
@@ -244,7 +246,7 @@ export default function ToolPage() {
   const [isStreaming, setIsStreaming] = useState(false)
   const abortRef = useRef(null)
 
-  // 调用 Worker 代理 API（流式）
+  // 直接调用 DeepSeek API（流式）
   const handleGenerate = async (formData) => {
     setLoading(true)
     setError('')
@@ -257,14 +259,20 @@ export default function ToolPage() {
       const controller = new AbortController()
       abortRef.current = controller
 
-      const response = await fetch(`${API_BASE}/api/generate`, {
+      const response = await fetch(DEEPSEEK_API_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
+        },
         body: JSON.stringify({
+          model: 'deepseek-chat',
           messages: [
             { role: 'system', content: selectedScenario.systemPrompt },
             { role: 'user', content: userPrompt }
           ],
+          temperature: 0.7,
+          max_tokens: 4000,
           stream: true,
         }),
         signal: controller.signal,
@@ -272,7 +280,7 @@ export default function ToolPage() {
 
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}))
-        throw new Error(errData.error || `请求失败 (${response.status})`)
+        throw new Error(errData.error?.message || `请求失败 (${response.status})`)
       }
 
       // 流式读取 SSE
@@ -371,7 +379,7 @@ export default function ToolPage() {
     )
   }
 
-  // 默认 → 显示场景选择（无需 API Key）
+  // 默认 → 显示场景选择
   return (
     <div className="min-h-screen bg-gray-50 p-4 pt-20">
       <div className="max-w-3xl mx-auto">
