@@ -5,11 +5,64 @@ const DEFAULT_API_KEY = 'sk-9517c7bdde2c411892b0768ade314d80'
 const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions'
 const API_TIMEOUT_MS = 60000
 
+// ============ 试用与付费配置 ============
+const TRIAL_LIMIT = 3
+const PRICE = 49
+const CONTACT_WECHAT = 'bank-ai-assistant'  // TODO: 替换为你的微信号
+// TODO: 将你的微信收款码截图保存为 public/wechat-pay.png，或替换下面的占位图
+
 function getApiKey() {
   try { return localStorage.getItem('bankai_api_key') || DEFAULT_API_KEY } catch { return DEFAULT_API_KEY }
 }
 function setApiKey(key) {
   try { key && key.trim() ? localStorage.setItem('bankai_api_key', key.trim()) : localStorage.removeItem('bankai_api_key') } catch {}
+}
+
+// 试用次数管理
+function getUsageCount() {
+  try { return parseInt(localStorage.getItem('bankai_usage_count') || '0', 10) } catch { return 0 }
+}
+function incrementUsageCount() {
+  try { localStorage.setItem('bankai_usage_count', String(getUsageCount() + 1)) } catch {}
+}
+function isActivated() {
+  try { return !!localStorage.getItem('bankai_activated') } catch { return false }
+}
+function activateCode(code) {
+  try { localStorage.setItem('bankai_activated', code) } catch {}
+}
+function getActivatedCode() {
+  try { return localStorage.getItem('bankai_activated') || '' } catch { return '' }
+}
+
+// 激活码验证（简单校验算法：BKAI-XXXX-XXXX 格式，XXXX部分字符码值之和须为7的倍数）
+function isValidActivationCode(code) {
+  if (!code) return false
+  const upper = code.trim().toUpperCase()
+  // 支持格式: BKAI-XXXX-XXXX 或 BANKAI-XXXX-XXXX
+  const match = upper.match(/^(BK|BANK)AI-(\w{4})-(\w{4})$/)
+  if (!match) return false
+  const payload = match[2] + match[3]
+  let sum = 0
+  for (let i = 0; i < payload.length; i++) sum += payload.charCodeAt(i)
+  return sum % 7 === 0
+}
+
+// 生成有效激活码的工具函数（仅供开发者使用，不会暴露给用户）
+// 在浏览器控制台输入 generateCode() 获取新激活码
+if (typeof window !== 'undefined') {
+  window.generateCode = function() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+    let attempts = 0
+    while (attempts < 1000) {
+      let p1 = '', p2 = ''
+      for (let i = 0; i < 4; i++) { p1 += chars[Math.floor(Math.random() * chars.length)]; p2 += chars[Math.floor(Math.random() * chars.length)] }
+      const code = `BKAI-${p1}-${p2}`
+      if (isValidActivationCode(code)) { console.log('新激活码:', code); return code }
+      attempts++
+    }
+    console.log('生成失败，请重试')
+  }
 }
 
 // ============ 公文格式指令 ============
@@ -620,6 +673,93 @@ function ApiKeySettings({ onClose }) {
   )
 }
 
+function PaywallModal({ onClose, onActivated }) {
+  const [code, setCode] = useState('')
+  const [codeError, setCodeError] = useState('')
+  const [codeSuccess, setCodeSuccess] = useState(false)
+
+  const handleActivate = () => {
+    const trimmed = code.trim()
+    if (!trimmed) { setCodeError('请输入激活码'); return }
+    if (isValidActivationCode(trimmed)) {
+      activateCode(trimmed.toUpperCase())
+      setCodeSuccess(true)
+      setTimeout(() => onActivated(), 1500)
+    } else {
+      setCodeError('激活码无效，请检查后重试')
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl">
+        {codeSuccess ? (
+          <div className="text-center py-8">
+            <div className="text-5xl mb-4">🎉</div>
+            <h3 className="text-xl font-bold text-green-600 mb-2">激活成功！</h3>
+            <p className="text-gray-500">无限次使用，祝工作顺利</p>
+          </div>
+        ) : (
+          <>
+            <div className="text-center mb-5">
+              <div className="w-14 h-14 bg-amber-100 rounded-2xl flex items-center justify-center text-2xl mx-auto mb-3">🔒</div>
+              <h3 className="text-xl font-bold text-gray-900">试用次数已用完</h3>
+              <p className="text-gray-500 text-sm mt-1">免费试用 {TRIAL_LIMIT} 次已结束，激活后无限次使用</p>
+            </div>
+
+            <div className="bg-gradient-to-r from-bank-500 to-bank-600 rounded-xl p-4 text-center mb-5">
+              <p className="text-bank-100 text-xs mb-1">一次性买断</p>
+              <p className="text-white text-3xl font-black">¥{PRICE}</p>
+              <p className="text-bank-200 text-xs mt-1">不限次数 · 永久可用 · 含后续更新</p>
+            </div>
+
+            <div className="bg-gray-50 rounded-xl p-4 mb-5">
+              <p className="text-sm font-medium text-gray-700 mb-3 text-center">付款方式</p>
+              <div className="flex items-center gap-4">
+                {/* 收款码区域 - TODO: 替换为你的微信收款码截图 */}
+                <div className="w-32 h-32 bg-white rounded-lg border-2 border-dashed border-gray-300 flex flex-col items-center justify-center flex-shrink-0">
+                  <div className="text-3xl mb-1">💳</div>
+                  <p className="text-xs text-gray-400 text-center px-2">微信扫码付款</p>
+                </div>
+                <div className="flex-1 space-y-2">
+                  <div className="bg-white rounded-lg p-2.5 border border-gray-200">
+                    <p className="text-xs text-gray-500">付款后添加微信</p>
+                    <p className="text-base font-bold text-bank-600">{CONTACT_WECHAT}</p>
+                  </div>
+                  <div className="text-xs text-gray-500 space-y-1">
+                    <p>1. 微信扫码付款 ¥{PRICE}</p>
+                    <p>2. 添加微信发送付款截图</p>
+                    <p>3. 获取激活码 → 输入下方</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3 mb-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">输入激活码</label>
+                <div className="flex gap-2">
+                  <input type="text" value={code} onChange={(e) => { setCode(e.target.value); setCodeError('') }}
+                    placeholder="BKAI-XXXX-XXXX" className="flex-1 border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-bank-500 focus:border-bank-500 outline-none font-mono text-center tracking-wider uppercase"
+                    onKeyDown={(e) => e.key === 'Enter' && handleActivate()} />
+                  <button onClick={handleActivate} className="bg-bank-600 hover:bg-bank-700 text-white font-bold px-5 rounded-lg transition-colors">
+                    激活
+                  </button>
+                </div>
+                {codeError && <p className="text-red-500 text-xs mt-1">{codeError}</p>}
+              </div>
+            </div>
+
+            <button onClick={onClose} className="w-full text-gray-400 hover:text-gray-600 text-sm py-2 transition-colors">
+              以后再说
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function ScenarioForm({ scenario, onGenerate, onBack, loading, error }) {
   const [formData, setFormData] = useState(() => {
     const initial = {}
@@ -789,7 +929,10 @@ export default function ToolPage() {
   const [error, setError] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [showPaywall, setShowPaywall] = useState(false)
   const [activeCategory, setActiveCategory] = useState('all')
+  const [usageCount, setUsageCount] = useState(getUsageCount())
+  const [activated, setActivated] = useState(isActivated())
   const abortRef = useRef(null)
 
   function parseError(err, statusCode) {
@@ -807,6 +950,11 @@ export default function ToolPage() {
   }
 
   const handleGenerate = async (formData) => {
+    // 检查试用限制
+    if (!isActivated() && getUsageCount() >= TRIAL_LIMIT) {
+      setShowPaywall(true)
+      return
+    }
     setLoading(true); setError(''); setResult(''); setIsStreaming(true)
     let statusCode = null
     try {
@@ -859,6 +1007,11 @@ export default function ToolPage() {
         }
       }
       setIsStreaming(false)
+      // 生成成功后增加试用计数
+      if (!isActivated()) {
+        incrementUsageCount()
+        setUsageCount(getUsageCount())
+      }
     } catch (err) {
       setIsStreaming(false)
       setError(parseError(err, statusCode))
@@ -908,7 +1061,11 @@ export default function ToolPage() {
           <div className="w-14 h-14 bg-bank-600 rounded-2xl flex items-center justify-center text-2xl mx-auto mb-3">&#127974;</div>
           <h1 className="text-2xl md:text-3xl font-black text-gray-900">选择你要写的材料</h1>
           <p className="text-gray-500 mt-2">3分钟出银行味底稿，复制就能交</p>
-          <p className="text-bank-600 text-sm mt-1 font-medium">免费体验中，无需注册 · 已覆盖14种公文 · 支持自定义</p>
+          <p className="text-bank-600 text-sm mt-1 font-medium">
+            {activated
+              ? '✓ 已激活 · 无限次使用'
+              : `免费试用 ${Math.max(0, TRIAL_LIMIT - usageCount)} 次 · 已覆盖14种公文 · 支持自定义`}
+          </p>
         </div>
 
         {/* 分类标签 */}
@@ -940,16 +1097,40 @@ export default function ToolPage() {
         </div>
 
         <div className="mt-8 space-y-4">
+          {/* 试用状态提示 */}
+          {!activated && (
+            <div className={`rounded-xl p-3 text-center ${usageCount >= TRIAL_LIMIT ? 'bg-amber-50 border border-amber-200' : 'bg-bank-50 border border-bank-200'}`}>
+              {usageCount >= TRIAL_LIMIT ? (
+                <div className="flex items-center justify-center gap-2">
+                  <span className="text-amber-600 text-sm font-medium">🔒 试用次数已用完</span>
+                  <button onClick={() => setShowPaywall(true)} className="bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold px-4 py-1.5 rounded-lg transition-colors">
+                    ¥{PRICE} 激活
+                  </button>
+                </div>
+              ) : (
+                <p className="text-bank-700 text-sm">
+                  剩余免费试用 <span className="font-bold text-bank-800">{TRIAL_LIMIT - usageCount}</span> 次，激活后无限使用
+                  <button onClick={() => setShowPaywall(true)} className="ml-2 text-bank-600 hover:text-bank-700 underline text-sm">了解激活</button>
+                </p>
+              )}
+            </div>
+          )}
           <div className="bg-bank-50 border border-bank-200 rounded-xl p-4 text-center">
             <p className="text-bank-700 text-sm">
               AI 生成的底稿请结合实际情况修改后使用，确保内容准确合规
             </p>
           </div>
-          <div className="flex justify-center">
+          <div className="flex justify-center gap-4">
             <button onClick={() => setShowSettings(true)}
               className="text-gray-500 hover:text-bank-600 text-sm flex items-center gap-1 transition-colors">
               <span>⚙️</span> API 设置
             </button>
+            {!activated && (
+              <button onClick={() => setShowPaywall(true)}
+                className="text-bank-600 hover:text-bank-700 text-sm flex items-center gap-1 font-medium transition-colors">
+                <span>🔑</span> 激活产品
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -960,6 +1141,13 @@ export default function ToolPage() {
             <ApiKeySettings onClose={() => setShowSettings(false)} />
           </div>
         </div>
+      )}
+
+      {showPaywall && (
+        <PaywallModal
+          onClose={() => setShowPaywall(false)}
+          onActivated={() => { setActivated(true); setShowPaywall(false) }}
+        />
       )}
     </div>
   )
