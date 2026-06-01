@@ -1,4 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useRef, useEffect } from 'react'
+
+// ============ Worker API 地址 ============
+// 部署 Cloudflare Worker 后替换为你的 Worker URL
+const API_BASE = 'https://bank-ai-proxy.wyymij.workers.dev'
 
 // ============ 场景配置 ============
 const SCENARIOS = [
@@ -86,38 +90,6 @@ ${data.plans ? `【下一步计划】${data.plans}` : ''}
   },
 ]
 
-// ============ API Key 组件 ============
-function ApiKeySetup({ apiKey, onSave }) {
-  const [key, setKey] = useState(apiKey)
-
-  return (
-    <div className="max-w-md mx-auto">
-      <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
-        <h3 className="text-lg font-bold text-gray-900 mb-2">设置 DeepSeek API Key</h3>
-        <p className="text-sm text-gray-500 mb-4">
-          本工具使用 DeepSeek AI 驱动。请前往
-          <a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener noreferrer" className="text-bank-600 underline mx-1">platform.deepseek.com</a>
-          注册并获取 API Key（新用户有免费额度）。
-        </p>
-        <input
-          type="password"
-          value={key}
-          onChange={(e) => setKey(e.target.value)}
-          placeholder="sk-..."
-          className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-bank-500 focus:border-bank-500 outline-none mb-3"
-        />
-        <button
-          onClick={() => key.trim() && onSave(key.trim())}
-          disabled={!key.trim()}
-          className="w-full bg-bank-600 hover:bg-bank-700 disabled:bg-gray-300 text-white font-semibold py-2.5 rounded-lg transition-colors"
-        >
-          保存并开始使用
-        </button>
-      </div>
-    </div>
-  )
-}
-
 // ============ 场景选择卡片 ============
 function ScenarioCard({ scenario, onSelect }) {
   return (
@@ -152,7 +124,7 @@ function ScenarioForm({ scenario, onGenerate, onBack, loading }) {
   return (
     <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
       <button onClick={onBack} className="text-bank-600 hover:text-bank-700 font-medium mb-4 flex items-center gap-1">
-        ← 返回选择场景
+        &larr; 返回选择场景
       </button>
 
       <div className="flex items-center gap-3 mb-6">
@@ -195,7 +167,7 @@ function ScenarioForm({ scenario, onGenerate, onBack, loading }) {
         >
           {loading ? (
             <span className="flex items-center justify-center gap-2">
-              <span className="animate-spin">⏳</span> AI 正在生成...
+              <span className="animate-spin">&#9203;</span> AI 正在生成...
             </span>
           ) : '生成底稿'}
         </button>
@@ -204,9 +176,17 @@ function ScenarioForm({ scenario, onGenerate, onBack, loading }) {
   )
 }
 
-// ============ 结果展示组件 ============
-function ResultView({ content, onReset, scenario }) {
+// ============ 结果展示组件（支持流式逐字显示） ============
+function ResultView({ content, onReset, scenario, isStreaming }) {
   const [copied, setCopied] = useState(false)
+  const contentRef = useRef(null)
+
+  // 自动滚动到底部
+  useEffect(() => {
+    if (contentRef.current && isStreaming) {
+      contentRef.current.scrollTop = contentRef.current.scrollHeight
+    }
+  }, [content, isStreaming])
 
   const handleCopy = () => {
     navigator.clipboard.writeText(content)
@@ -220,14 +200,17 @@ function ResultView({ content, onReset, scenario }) {
         <div className="flex items-center gap-2">
           <span className="text-xl">{scenario.icon}</span>
           <h3 className="text-lg font-bold text-gray-900">{scenario.name} - 生成结果</h3>
+          {isStreaming && <span className="animate-pulse text-bank-600 text-sm ml-2">生成中...</span>}
         </div>
         <div className="flex gap-2">
-          <button
-            onClick={handleCopy}
-            className="bg-bank-100 hover:bg-bank-200 text-bank-700 font-medium py-2 px-4 rounded-lg transition-colors text-sm"
-          >
-            {copied ? '✅ 已复制' : '📋 复制全文'}
-          </button>
+          {!isStreaming && (
+            <button
+              onClick={handleCopy}
+              className="bg-bank-100 hover:bg-bank-200 text-bank-700 font-medium py-2 px-4 rounded-lg transition-colors text-sm"
+            >
+              {copied ? '已复制' : '复制全文'}
+            </button>
+          )}
           <button
             onClick={onReset}
             className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2 px-4 rounded-lg transition-colors text-sm"
@@ -236,82 +219,101 @@ function ResultView({ content, onReset, scenario }) {
           </button>
         </div>
       </div>
-      <div className="bg-gray-50 rounded-xl p-5 font-mono text-sm leading-relaxed whitespace-pre-wrap text-gray-800 border border-gray-200 max-h-[60vh] overflow-y-auto">
+      <div
+        ref={contentRef}
+        className="bg-gray-50 rounded-xl p-5 font-mono text-sm leading-relaxed whitespace-pre-wrap text-gray-800 border border-gray-200 max-h-[60vh] overflow-y-auto"
+      >
         {content}
+        {isStreaming && <span className="inline-block w-2 h-4 bg-bank-600 animate-pulse ml-0.5 align-middle"></span>}
       </div>
-      <p className="text-xs text-gray-400 mt-3 text-center">
-        ⚠️ 以上内容由AI生成，请结合实际情况修改后使用
-      </p>
+      {!isStreaming && (
+        <p className="text-xs text-gray-400 mt-3 text-center">
+          以上内容由AI生成，请结合实际情况修改后使用
+        </p>
+      )}
     </div>
   )
 }
 
 // ============ 主工具页面 ============
 export default function ToolPage() {
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('deepseek_api_key') || '')
   const [selectedScenario, setSelectedScenario] = useState(null)
   const [result, setResult] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [isStreaming, setIsStreaming] = useState(false)
+  const abortRef = useRef(null)
 
-  // 保存 API Key
-  const handleSaveApiKey = (key) => {
-    setApiKey(key)
-    localStorage.setItem('deepseek_api_key', key)
-  }
-
-  // 调用 DeepSeek API
+  // 调用 Worker 代理 API（流式）
   const handleGenerate = async (formData) => {
-    if (!apiKey) {
-      setError('请先设置 API Key')
-      return
-    }
-
     setLoading(true)
     setError('')
     setResult('')
+    setIsStreaming(true)
 
     try {
       const userPrompt = selectedScenario.buildUserPrompt(formData)
 
-      const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+      const controller = new AbortController()
+      abortRef.current = controller
+
+      const response = await fetch(`${API_BASE}/api/generate`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'deepseek-chat',
           messages: [
             { role: 'system', content: selectedScenario.systemPrompt },
             { role: 'user', content: userPrompt }
           ],
-          temperature: 0.7,
-          max_tokens: 4000
-        })
+          stream: true,
+        }),
+        signal: controller.signal,
       })
 
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}))
-        if (response.status === 401) {
-          throw new Error('API Key 无效，请检查后重新设置')
-        } else if (response.status === 429) {
-          throw new Error('请求过于频繁，请稍后再试')
-        } else {
-          throw new Error(errData.error?.message || `请求失败 (${response.status})`)
+        throw new Error(errData.error || `请求失败 (${response.status})`)
+      }
+
+      // 流式读取 SSE
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let fullText = ''
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() // 保留未完成的行
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            const data = line.slice(6).trim()
+            if (data === '[DONE]') continue
+
+            try {
+              const parsed = JSON.parse(data)
+              const delta = parsed.choices?.[0]?.delta?.content
+              if (delta) {
+                fullText += delta
+                setResult(fullText)
+              }
+            } catch {
+              // 跳过无法解析的行
+            }
+          }
         }
       }
 
-      const data = await response.json()
-      const content = data.choices?.[0]?.message?.content
-
-      if (!content) {
-        throw new Error('AI 未返回有效内容')
-      }
-
-      setResult(content)
+      setIsStreaming(false)
     } catch (err) {
-      if (err.name === 'TypeError' && err.message.includes('fetch')) {
+      setIsStreaming(false)
+      if (err.name === 'AbortError') {
+        // 用户取消
+      } else if (err.message?.includes('fetch') || err.message?.includes('Failed')) {
         setError('网络连接失败，请检查网络后重试')
       } else {
         setError(err.message)
@@ -323,25 +325,13 @@ export default function ToolPage() {
 
   // 重新生成
   const handleReset = () => {
+    if (abortRef.current) {
+      abortRef.current.abort()
+    }
     setResult('')
     setSelectedScenario(null)
     setError('')
-  }
-
-  // 没 API Key → 显示设置页
-  if (!apiKey) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <div className="w-full max-w-md">
-          <div className="text-center mb-6">
-            <div className="w-14 h-14 bg-bank-600 rounded-2xl flex items-center justify-center text-2xl mx-auto mb-3">🏦</div>
-            <h1 className="text-2xl font-black text-gray-900">银行人AI工具包</h1>
-            <p className="text-gray-500 mt-1">首次使用需设置 API Key</p>
-          </div>
-          <ApiKeySetup apiKey={apiKey} onSave={handleSaveApiKey} />
-        </div>
-      </div>
-    )
+    setIsStreaming(false)
   }
 
   // 有结果 → 显示结果
@@ -349,7 +339,12 @@ export default function ToolPage() {
     return (
       <div className="min-h-screen bg-gray-50 p-4 pt-20">
         <div className="max-w-3xl mx-auto">
-          <ResultView content={result} onReset={handleReset} scenario={selectedScenario} />
+          <ResultView
+            content={result}
+            onReset={handleReset}
+            scenario={selectedScenario}
+            isStreaming={isStreaming}
+          />
         </div>
       </div>
     )
@@ -368,15 +363,7 @@ export default function ToolPage() {
           />
           {error && (
             <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-4 text-red-700 text-sm">
-              ❌ {error}
-              {error.includes('API Key') && (
-                <button
-                  onClick={() => { setApiKey(''); localStorage.removeItem('deepseek_api_key') }}
-                  className="ml-2 underline text-red-600"
-                >
-                  重新设置
-                </button>
-              )}
+              {error}
             </div>
           )}
         </div>
@@ -384,13 +371,15 @@ export default function ToolPage() {
     )
   }
 
-  // 默认 → 显示场景选择
+  // 默认 → 显示场景选择（无需 API Key）
   return (
     <div className="min-h-screen bg-gray-50 p-4 pt-20">
       <div className="max-w-3xl mx-auto">
         <div className="text-center mb-8">
+          <div className="w-14 h-14 bg-bank-600 rounded-2xl flex items-center justify-center text-2xl mx-auto mb-3">&#127974;</div>
           <h1 className="text-2xl md:text-3xl font-black text-gray-900">选择你要写的材料</h1>
           <p className="text-gray-500 mt-2">3分钟出银行味底稿，复制就能交</p>
+          <p className="text-bank-600 text-sm mt-1 font-medium">免费体验中，无需注册</p>
         </div>
 
         <div className="grid sm:grid-cols-3 gap-4">
@@ -399,13 +388,10 @@ export default function ToolPage() {
           ))}
         </div>
 
-        <div className="mt-6 text-center">
-          <button
-            onClick={() => { setApiKey(''); localStorage.removeItem('deepseek_api_key') }}
-            className="text-gray-400 hover:text-gray-600 text-sm transition-colors"
-          >
-            重新设置 API Key
-          </button>
+        <div className="mt-8 bg-bank-50 border border-bank-200 rounded-xl p-4 text-center">
+          <p className="text-bank-700 text-sm">
+            AI 生成的底稿请结合实际情况修改后使用，确保内容准确合规
+          </p>
         </div>
       </div>
     </div>
