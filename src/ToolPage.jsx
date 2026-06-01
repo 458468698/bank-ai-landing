@@ -27,6 +27,7 @@ const FORMAT_INSTRUCTION = `
 
 // ============ 场景分类 ============
 const CATEGORIES = [
+  { id: 'custom', name: '自定义', icon: '✏️' },
   { id: 'regulatory', name: '监管回复', icon: '🏛️' },
   { id: 'analysis', name: '分析研判', icon: '📊' },
   { id: 'regulation', name: '规章制度', icon: '📜' },
@@ -36,6 +37,40 @@ const CATEGORIES = [
 
 // ============ 场景配置（13种公文） ============
 const SCENARIOS = [
+  // ---- 自定义公文 ----
+  {
+    id: 'custom',
+    name: '自定义公文',
+    icon: '✏️',
+    category: 'custom',
+    desc: '任意公文类型，自定义要求',
+    systemPrompt: '你是一名商业银行公文写作专家，精通银行各类公文的撰写规范，包括但不限于：管理办法、实施细则、决定、批复、意见、决议、命令、批示、公告、通告、公示、承诺书、声明、协议、合同、制度、规程、规范、标准等。你写的公文必须：1）格式规范，符合银行公文行文标准；2）术语精准、用词严谨；3）逻辑清晰、层次分明；4）语气得体，符合行文方向（上行文/下行文/平行文）；5）根据用户指定的公文类型自动适配格式和行文风格。' + FORMAT_INSTRUCTION,
+    fields: [
+      { key: 'docType', label: '公文类型', placeholder: '如：管理办法/批复/决定/意见/公告/承诺书/公示/声明/实施细则...', required: true, type: 'text' },
+      { key: 'title', label: '标题/事由', placeholder: '如：关于XX的批复 / XX管理办法', required: true, type: 'text' },
+      { key: 'sender', label: '发文单位', placeholder: '如：XX银行XX分行/风险管理部', required: false, type: 'text' },
+      { key: 'recipient', label: '主送/收文单位', placeholder: '如：各分支行/XX科室/监管分局', required: false, type: 'text' },
+      { key: 'content', label: '核心内容/事由', placeholder: '详细描述公文要写的内容、背景、要点', required: true, type: 'textarea' },
+      { key: 'customReqs', label: '其他要求', placeholder: '如：需包含附件清单、需引用XX监管文件、特定章节结构、试行期限等', required: false, type: 'textarea' },
+      { key: 'wordCount', label: '字数要求', placeholder: '如：800、1500、3000（留空则默认800-1500字）', required: false, type: 'text' },
+    ],
+    buildUserPrompt: (data) => {
+      const wc = data.wordCount ? `字数控制在${data.wordCount}字左右` : '字数800-1500字'
+      return `请根据以下信息撰写一份${data.docType}：
+
+【公文类型】${data.docType}
+【标题】${data.title}
+${data.sender ? `【发文单位】${data.sender}\n` : ''}${data.recipient ? `【主送单位】${data.recipient}\n` : ''}【核心内容】${data.content}
+${data.customReqs ? `【其他要求】${data.customReqs}\n` : ''}
+要求：
+1. 严格按照"${data.docType}"的公文格式和行文规范撰写
+2. 术语精准、用词严谨
+3. 逻辑清晰、层次分明
+4. 语气得体，符合行文方向
+5. ${wc}`
+    }
+  },
+
   // ---- 监管回复 ----
   {
     id: 'situation-report',
@@ -873,7 +908,7 @@ export default function ToolPage() {
           <div className="w-14 h-14 bg-bank-600 rounded-2xl flex items-center justify-center text-2xl mx-auto mb-3">&#127974;</div>
           <h1 className="text-2xl md:text-3xl font-black text-gray-900">选择你要写的材料</h1>
           <p className="text-gray-500 mt-2">3分钟出银行味底稿，复制就能交</p>
-          <p className="text-bank-600 text-sm mt-1 font-medium">免费体验中，无需注册 · 已覆盖13种公文</p>
+          <p className="text-bank-600 text-sm mt-1 font-medium">免费体验中，无需注册 · 已覆盖14种公文 · 支持自定义</p>
         </div>
 
         {/* 分类标签 */}
