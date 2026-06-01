@@ -1,10 +1,27 @@
 import { useState, useRef, useEffect } from 'react'
 
-// ============ DeepSeek API 直调（MVP 临时方案） ============
-// 注意：API Key 暴露在前端代码中，仅用于 MVP 测试阶段
-// 正式产品必须使用后端代理保护 Key
-const DEEPSEEK_API_KEY = 'sk-9517c7bdde2c411892b0768ade314d80'
+// ============ DeepSeek API 配置 ============
+const DEFAULT_API_KEY = 'sk-9517c7bdde2c411892b0768ade314d80'
 const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions'
+const API_TIMEOUT_MS = 30000 // 30秒超时
+
+function getApiKey() {
+  try {
+    return localStorage.getItem('bankai_api_key') || DEFAULT_API_KEY
+  } catch {
+    return DEFAULT_API_KEY
+  }
+}
+
+function setApiKey(key) {
+  try {
+    if (key && key.trim()) {
+      localStorage.setItem('bankai_api_key', key.trim())
+    } else {
+      localStorage.removeItem('bankai_api_key')
+    }
+  } catch {}
+}
 
 // ============ 场景配置 ============
 const SCENARIOS = [
@@ -20,18 +37,7 @@ const SCENARIOS = [
       { key: 'recipient', label: '报送对象', placeholder: '如：分行风险管理部/监管科室', required: false, type: 'text' },
       { key: 'measures', label: '已采取/拟采取的措施', placeholder: '如：已加强贷后检查频次，拟调整XX行业授信政策', required: false, type: 'textarea' },
     ],
-    buildUserPrompt: (data) => `请根据以下信息撰写一份正式的情况说明：
-
-【事由】${data.title}
-${data.recipient ? `【报送对象】${data.recipient}` : ''}
-【关键事实】${data.facts}
-${data.measures ? `【应对措施】${data.measures}` : ''}
-
-要求：
-1. 标准公文格式（标题、主送、正文、落款）
-2. 先概述事实，再分析原因，最后提出措施
-3. 措辞严谨，不使用模糊表述
-4. 字数800-1500字`
+    buildUserPrompt: (data) => `请根据以下信息撰写一份正式的情况说明：\n\n【事由】${data.title}\n${data.recipient ? `【报送对象】${data.recipient}\n` : ''}【关键事实】${data.facts}\n${data.measures ? `【应对措施】${data.measures}\n` : ''}\n要求：\n1. 标准公文格式（标题、主送、正文、落款）\n2. 先概述事实，再分析原因，最后提出措施\n3. 措辞严谨，不使用模糊表述\n4. 字数800-1500字`
   },
   {
     id: 'risk-report',
@@ -46,19 +52,7 @@ ${data.measures ? `【应对措施】${data.measures}` : ''}
       { key: 'indicators', label: '关键数据指标', placeholder: '如：不良率2.8%，拨备覆盖率150%，关注类贷款占比...', required: true, type: 'textarea' },
       { key: 'risks', label: '已知风险点', placeholder: '如：XX行业集中度偏高，担保链风险暴露', required: false, type: 'textarea' },
     ],
-    buildUserPrompt: (data) => `请根据以下信息撰写一份风险分析报告：
-
-【报告类型】${data.reportType}
-【分析对象】${data.target}
-【分析期间】${data.period}
-【关键数据指标】${data.indicators}
-${data.risks ? `【已知风险点】${data.risks}` : ''}
-
-要求：
-1. 包含：概述、数据分析、风险识别、风险评估、建议措施
-2. 风险等级判断使用标准术语
-3. 建议措施具体可执行
-4. 字数1500-2500字`
+    buildUserPrompt: (data) => `请根据以下信息撰写一份风险分析报告：\n\n【报告类型】${data.reportType}\n【分析对象】${data.target}\n【分析期间】${data.period}\n【关键数据指标】${data.indicators}\n${data.risks ? `【已知风险点】${data.risks}\n` : ''}\n要求：\n1. 包含：概述、数据分析、风险识别、风险评估、建议措施\n2. 风险等级判断使用标准术语\n3. 建议措施具体可执行\n4. 字数1500-2500字`
   },
   {
     id: 'work-summary',
@@ -74,21 +68,7 @@ ${data.risks ? `【已知风险点】${data.risks}` : ''}
       { key: 'issues', label: '存在的不足', placeholder: '如：不良率控制压力大，新发放贷款质量需关注', required: false, type: 'textarea' },
       { key: 'plans', label: '下一步计划', placeholder: '如：加强贷后管理、推进不良处置', required: false, type: 'textarea' },
     ],
-    buildUserPrompt: (data) => `请根据以下信息撰写一份${data.docType}：
-
-【文种】${data.docType}
-【汇报人/部门】${data.department}
-【汇报期间】${data.period}
-【主要工作成果】${data.achievements}
-${data.issues ? `【存在的不足】${data.issues}` : ''}
-${data.plans ? `【下一步计划】${data.plans}` : ''}
-
-要求：
-1. 成果部分用数据说话，避免空泛描述
-2. 不足部分客观诚恳
-3. 计划部分具体可衡量
-4. 符合银行内部汇报规范
-5. 字数1000-2000字`
+    buildUserPrompt: (data) => `请根据以下信息撰写一份${data.docType}：\n\n【文种】${data.docType}\n【汇报人/部门】${data.department}\n【汇报期间】${data.period}\n【主要工作成果】${data.achievements}\n${data.issues ? `【存在的不足】${data.issues}\n` : ''}${data.plans ? `【下一步计划】${data.plans}\n` : ''}\n要求：\n1. 成果部分用数据说话，避免空泛描述\n2. 不足部分客观诚恳\n3. 计划部分具体可衡量\n4. 符合银行内部汇报规范\n5. 字数1000-2000字`
   },
 ]
 
@@ -106,8 +86,85 @@ function ScenarioCard({ scenario, onSelect }) {
   )
 }
 
+// ============ API Key 设置面板 ============
+function ApiKeySettings({ onClose }) {
+  const [key, setKey] = useState(() => {
+    try { return localStorage.getItem('bankai_api_key') || '' } catch { return '' }
+  })
+  const [saved, setSaved] = useState(false)
+
+  const handleSave = () => {
+    setApiKey(key)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  const handleClear = () => {
+    setKey('')
+    setApiKey('')
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  const isCustom = key && key !== DEFAULT_API_KEY
+
+  return (
+    <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-bold text-gray-900">⚙️ API 设置</h3>
+        <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+      </div>
+
+      <div className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            DeepSeek API Key
+          </label>
+          <input
+            type="password"
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            placeholder="sk-xxxxxxxxxxxxxxxx"
+            className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-bank-500 focus:border-bank-500 outline-none transition-all"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            留空则使用默认 Key。默认 Key 目前<span className="text-red-500 font-medium">余额不足</span>，建议填入自己的 Key。
+          </p>
+        </div>
+
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm text-yellow-800">
+          <p className="font-medium mb-1">💡 如何获取自己的 Key？</p>
+          <ol className="list-decimal list-inside space-y-1 text-xs">
+            <li>访问 <a href="https://platform.deepseek.com" target="_blank" rel="noopener noreferrer" className="text-bank-600 underline">platform.deepseek.com</a></li>
+            <li>注册/登录后进入「API Keys」页面</li>
+            <li>创建新 Key 并复制到这里</li>
+            <li>新用户有赠送额度，足够测试使用</li>
+          </ol>
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            onClick={handleSave}
+            className="flex-1 bg-bank-600 hover:bg-bank-700 text-white font-bold py-2 rounded-lg transition-colors"
+          >
+            {saved ? '✓ 已保存' : '保存设置'}
+          </button>
+          {isCustom && (
+            <button
+              onClick={handleClear}
+              className="px-4 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium py-2 rounded-lg transition-colors"
+            >
+              恢复默认
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ============ 表单组件 ============
-function ScenarioForm({ scenario, onGenerate, onBack, loading }) {
+function ScenarioForm({ scenario, onGenerate, onBack, loading, error }) {
   const [formData, setFormData] = useState(() => {
     const initial = {}
     scenario.fields.forEach(f => { initial[f.key] = '' })
@@ -174,6 +231,13 @@ function ScenarioForm({ scenario, onGenerate, onBack, loading }) {
           ) : '生成底稿'}
         </button>
       </form>
+
+      {error && (
+        <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-4 text-red-700 text-sm">
+          <p className="font-medium mb-1">生成失败</p>
+          <p>{error}</p>
+        </div>
+      )}
     </div>
   )
 }
@@ -183,7 +247,6 @@ function ResultView({ content, onReset, scenario, isStreaming }) {
   const [copied, setCopied] = useState(false)
   const contentRef = useRef(null)
 
-  // 自动滚动到底部
   useEffect(() => {
     if (contentRef.current && isStreaming) {
       contentRef.current.scrollTop = contentRef.current.scrollHeight
@@ -244,7 +307,37 @@ export default function ToolPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
   const abortRef = useRef(null)
+
+  // 解析友好的错误信息
+  function parseError(err, statusCode) {
+    const msg = err.message || ''
+
+    // 网络层错误
+    if (err.name === 'TypeError' || msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
+      return '无法连接到 DeepSeek 服务。可能原因：\n① 当前网络环境屏蔽了 api.deepseek.com\n② 公司防火墙限制了外部 API 访问\n③ 建议：填入自己的 API Key 后，用手机流量测试'
+    }
+
+    // 超时
+    if (err.name === 'AbortError') {
+      return '请求超时（30秒），请检查网络或稍后重试'
+    }
+
+    // HTTP 错误
+    if (statusCode === 401) {
+      return 'API Key 无效或已过期，请检查 Key 是否正确'
+    }
+    if (statusCode === 402 || statusCode === 429 || msg.includes('Insufficient Balance') || msg.includes('balance')) {
+      return 'API Key 余额不足。请填入自己的 DeepSeek API Key 继续使用'
+    }
+    if (statusCode >= 500) {
+      return 'DeepSeek 服务器暂时不可用，请稍后重试'
+    }
+
+    // 其他 API 错误
+    return msg || `请求异常 (HTTP ${statusCode || '?'})`
+  }
 
   // 直接调用 DeepSeek API（流式）
   const handleGenerate = async (formData) => {
@@ -253,17 +346,25 @@ export default function ToolPage() {
     setResult('')
     setIsStreaming(true)
 
+    let statusCode = null
+
     try {
       const userPrompt = selectedScenario.buildUserPrompt(formData)
+      const apiKey = getApiKey()
 
       const controller = new AbortController()
       abortRef.current = controller
+
+      // 设置超时
+      const timeoutId = setTimeout(() => {
+        controller.abort()
+      }, API_TIMEOUT_MS)
 
       const response = await fetch(DEEPSEEK_API_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
+          'Authorization': `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
           model: 'deepseek-chat',
@@ -278,9 +379,12 @@ export default function ToolPage() {
         signal: controller.signal,
       })
 
+      clearTimeout(timeoutId)
+      statusCode = response.status
+
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}))
-        throw new Error(errData.error?.message || `请求失败 (${response.status})`)
+        throw new Error(errData.error?.message || `HTTP ${response.status}`)
       }
 
       // 流式读取 SSE
@@ -295,7 +399,7 @@ export default function ToolPage() {
 
         buffer += decoder.decode(value, { stream: true })
         const lines = buffer.split('\n')
-        buffer = lines.pop() // 保留未完成的行
+        buffer = lines.pop()
 
         for (const line of lines) {
           if (line.startsWith('data: ')) {
@@ -319,15 +423,13 @@ export default function ToolPage() {
       setIsStreaming(false)
     } catch (err) {
       setIsStreaming(false)
-      if (err.name === 'AbortError') {
-        // 用户取消
-      } else if (err.message?.includes('fetch') || err.message?.includes('Failed')) {
-        setError('网络连接失败，请检查网络后重试')
-      } else {
-        setError(err.message)
+      if (err.name === 'AbortError' && loading) {
+        // 超时导致的 abort，已经设置了
       }
+      setError(parseError(err, statusCode))
     } finally {
       setLoading(false)
+      abortRef.current = null
     }
   }
 
@@ -368,12 +470,8 @@ export default function ToolPage() {
             onGenerate={handleGenerate}
             onBack={() => { setSelectedScenario(null); setError('') }}
             loading={loading}
+            error={error}
           />
-          {error && (
-            <div className="mt-4 bg-red-50 border border-red-200 rounded-lg p-4 text-red-700 text-sm">
-              {error}
-            </div>
-          )}
         </div>
       </div>
     )
@@ -396,12 +494,31 @@ export default function ToolPage() {
           ))}
         </div>
 
-        <div className="mt-8 bg-bank-50 border border-bank-200 rounded-xl p-4 text-center">
-          <p className="text-bank-700 text-sm">
-            AI 生成的底稿请结合实际情况修改后使用，确保内容准确合规
-          </p>
+        <div className="mt-8 space-y-4">
+          <div className="bg-bank-50 border border-bank-200 rounded-xl p-4 text-center">
+            <p className="text-bank-700 text-sm">
+              AI 生成的底稿请结合实际情况修改后使用，确保内容准确合规
+            </p>
+          </div>
+
+          <div className="flex justify-center">
+            <button
+              onClick={() => setShowSettings(true)}
+              className="text-gray-500 hover:text-bank-600 text-sm flex items-center gap-1 transition-colors"
+            >
+              <span>⚙️</span> API 设置
+            </button>
+          </div>
         </div>
       </div>
+
+      {showSettings && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="w-full max-w-md">
+            <ApiKeySettings onClose={() => setShowSettings(false)} />
+          </div>
+        </div>
+      )}
     </div>
   )
 }
